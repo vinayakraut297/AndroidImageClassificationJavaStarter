@@ -18,20 +18,27 @@ import android.os.ParcelFileDescriptor;
 import android.provider.MediaStore;
 import android.view.View;
 import android.widget.ImageView;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.FileDescriptor;
 import java.io.IOException;
+import java.util.List;
+
 import android.util.Log;
 import android.database.Cursor;
+
+import kotlin.reflect.KClassifier;
 
 public class MainActivity extends AppCompatActivity {
 
     private static final int RESULT_LOAD_IMAGE = 123;
     public static final int IMAGE_CAPTURE_CODE = 654;
     private static final int PERMISSION_CODE = 321;
-    ImageView frame,innerImage;
+    ImageView frame, innerImage;
     private Uri image_uri;
+    Classifier classifier;
+    TextView resultTv;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -39,6 +46,7 @@ public class MainActivity extends AppCompatActivity {
         setContentView(R.layout.activity_main);
         frame = findViewById(R.id.imageView);
         innerImage = findViewById(R.id.imageView2);
+        resultTv=findViewById(R.id.textView);
 
         frame.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -48,24 +56,21 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-
         frame.setOnLongClickListener(new View.OnLongClickListener() {
             @Override
             public boolean onLongClick(View v) {
                 Log.d("CameraDebug", "Long press detected");
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M){
-                    if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_DENIED || 
-                        checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_DENIED){
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_DENIED ||
+                            checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_DENIED) {
                         Log.d("CameraDebug", "Requesting permissions");
                         String[] permission = {Manifest.permission.CAMERA, Manifest.permission.WRITE_EXTERNAL_STORAGE};
                         requestPermissions(permission, PERMISSION_CODE);
-                    }
-                    else {
+                    } else {
                         Log.d("CameraDebug", "Opening camera");
                         openCamera();
                     }
-                }
-                else {
+                } else {
                     Log.d("CameraDebug", "Opening camera (pre-M)");
                     openCamera();
                 }
@@ -73,14 +78,10 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        // Request permissions at startup
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED ||
-                checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
-                Log.d("CameraDebug", "Requesting initial permissions");
-                String[] permission = {Manifest.permission.CAMERA, Manifest.permission.WRITE_EXTERNAL_STORAGE};
-                requestPermissions(permission, PERMISSION_CODE);
-            }
+        try {
+            classifier = new Classifier(getAssets(),"mobilenet_v1_1.0_224.tflite","mobilenet_v1_1.0_224.txt",224);
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
     }
 
@@ -138,6 +139,7 @@ public class MainActivity extends AppCompatActivity {
             Bitmap bitmap = uriToBitmap(image_uri);
             if (bitmap != null) {
                 innerImage.setImageBitmap(bitmap);
+                doInferanec(bitmap);
             } else {
                 Toast.makeText(this, "Failed to load image", Toast.LENGTH_SHORT).show();
             }
@@ -148,12 +150,26 @@ public class MainActivity extends AppCompatActivity {
                 Bitmap bitmap = uriToBitmap(image_uri);
                 if (bitmap != null) {
                     innerImage.setImageBitmap(bitmap);
+                    doInferanec(bitmap);
                 } else {
                     Toast.makeText(this, "Failed to load captured image", Toast.LENGTH_SHORT).show();
                 }
             } else if (resultCode == RESULT_CANCELED) {
                 Toast.makeText(this, "Camera capture cancelled", Toast.LENGTH_SHORT).show();
             }
+        }
+    }
+
+    void doInferanec(Bitmap input){
+        Bitmap rotated = rotateBitmap(input);
+        List<Classifier.Recognition> results = classifier.recognizeImage(rotated);
+
+        // Clear previous text before appending new results
+        resultTv.setText("");
+
+        for (int i = 0; i < results.size(); i++){
+            Classifier.Recognition recognition = results.get(i);
+            resultTv.append(recognition.title + " " + recognition.confidence + "\n");
         }
     }
 
